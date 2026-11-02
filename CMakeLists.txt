@@ -10,7 +10,7 @@ set(CMAKE_CXX_EXTENSIONS ON)  # 可以禁用编译器扩展，保证可移植性
 project(pans
     VERSION 1.0.0
     DESCRIPTION "A modern C++20 project template"
-    LANGUAGES CXX
+    LANGUAGES CXX C
 )
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers) 
@@ -33,15 +33,18 @@ message(STATUS "CPU cores    : ${CPU_COUNT}")
 message(STATUS "Thread count : ${THREAD_COUNT}  (1 + cores / 2)")
 
 
-option(PANS_BUILD_EXAMPLES "Build examples" ON)
-option(PANS_BUILD_TESTS "Build tests" ON)
-option(PANS_BUILD_TOOLS "Build tools" ON)
-
-
 ## 添加自定义 CMake 模块路径
 include(cmake/pansOptions.cmake)
 
 
+
+
+
+
+
+option(PANS_BUILD_EXAMPLES "Build examples" ON)
+option(PANS_BUILD_TESTS "Build tests" ON)
+option(PANS_BUILD_TOOLS "Build tools" ON)
 
 add_subdirectory(pans)
 if(PANS_BUILD_TESTS)
