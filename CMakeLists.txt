@@ -67,7 +67,7 @@ endif()
 
 # 如果项目有头文件目录，可以设置包含路径
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/pans/include
 )
 
 # 可选：链接库（例如 threads）
