@@ -7,13 +7,13 @@ namespace pans::detail{
     Formatter::Formatter(std::string_view pattern):m_pattern(pattern){
         if(parse()){throw std::invalid_argument("invalid log format,parse failed.");}
     };
-    void Formatter::format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept{
+    void Formatter::format(const LogRecordView& record,ForMattedRecordBuffer& output) const {
         for(const auto& item:m_items){
             item->format(record,output);
         }
     }
     template<typename T>
-    void AppendInteger(ForMattedRecordBuffer& output,T value) noexcept{
+    void AppendInteger(ForMattedRecordBuffer& output,T value)  {
         std::array<char,24> buffer{};
         const auto result=std::to_chars(buffer.data(),buffer.data()+buffer.size(),value);
         ASSERT_RETNONE2(result.ec==std::errc(),"trans "<<value<<"to chars failed.");
@@ -21,8 +21,8 @@ namespace pans::detail{
     }
     class LiteralFormatItem final: public Formatter::FormatItem{
         public:
-            explicit LiteralFormatItem(std::string value):m_value(value){};
-            void format(const LogRecordView& record,ForMattedRecordBuffer& output)const noexcept{ 
+            explicit LiteralFormatItem(std::string value):m_value(std::move(value)){};
+            void format(const LogRecordView& ,ForMattedRecordBuffer& output)const  override{ 
                 output.append(m_value);
             };
         private:
@@ -30,37 +30,196 @@ namespace pans::detail{
     };
     class MessageFormatItem final: public Formatter::FormatItem{
         public:
-            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept {
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const   override{
                 output.append(record.m_message);
             };
     };
     class LevelFormatItem final:public Formatter::FormatItem{
         public:
-            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept{
-                output.append(LoggerLevel::LevelToString(record.m_level));
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
+                output.append(LogLevel::LevelToString(record.m_level));
             }
     };
-    class ElapsedFormatItem final: Formatter::FormatItem{
+    class ElapsedFormatItem final:public Formatter::FormatItem{
         public:
-            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept{
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
                 AppendInteger(output,std::chrono::duration_cast<std::chrono::milliseconds>(record.m_elapsed).count());
             }
     };
     class LoggerNameFormatItem final: public Formatter::FormatItem{
         public:
-            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept{
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
                 output.append(record.m_loggerName);
             }
     };
     class ThreadIdFormatItem final: public Formatter::FormatItem{
         public:
-            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept{
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
                 AppendInteger(output,record.m_threadId);
             }
     };
     class NewLineFormatItem final: public Formatter::FormatItem{
-        void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept{
-            output.append('\n');
-        }
+        public:
+            void format(const LogRecordView& ,ForMattedRecordBuffer& output) const  override{
+                output.append('\n');
+            }
     };
-}
+    class DateTimeFormatItem final: public Formatter::FormatItem{
+        public:
+            explicit DateTimeFormatItem(std::string_view format):m_format(format.empty()? DEFAULT_DATA_FOMAT:format){};
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
+                //记录上一次的时间，如果是同一秒内打出来的日志，复用减少时间转换
+                static thread_local int last_second=0;
+                static thread_local char cached_data_time[20]={'\0'};
+                const auto duration=record.m_timestamp.time_since_epoch();
+                const time_t current_second=static_cast<time_t> (std::chrono::duration_cast<std::chrono::seconds>(duration).count());
+                if(current_second!=last_second){
+                    std::tm buffer{};
+                    #if defined(_WIN32)
+                        const errno_t result=localtime_s(&buffer,&current_second);
+                        ASSERT_RETNONE2(result==0,"failed to convert log time to local time");
+                    #else
+                        const std::tm* result=localtime_r(&current_second,&buffer);
+                        ASSERT_RETNONE2(result!=nullptr,"failed to convert log time to local time");
+                    #endif
+                    const std::size_t size=std::strftime(cached_data_time,sizeof(cached_data_time),m_format.c_str(),&buffer);
+                    ASSERT_RETNONE2(size!=0,"failed to log time");
+                    last_second=current_second;
+                }
+                output.append(cached_data_time);
+            }
+        private:
+            std::string m_format;
+    };
+    class MicrosecondsFormatItem final: public Formatter::FormatItem{
+        public:
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
+                const auto total_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(record.m_timestamp.time_since_epoch()).count();
+                // std::uint64_t microseconds=total_microseconds % 1000000; 
+                // if(microseconds<0){
+                //     microseconds+=1000000;
+                // }
+                //MicrosecondsFormatItem —— 在取模前用有符号处理
+                auto sub_second = static_cast<std::int64_t>(total_microseconds) % 1000000;
+                if (sub_second < 0) sub_second += 1000000;
+                auto microseconds = static_cast<std::uint64_t>(sub_second);
+                //补齐位数,补齐6位，否则12：12：12.1234 这种1234无法区分；//001234；
+                std::array<char,MICROSECONDS_WIDTH> digits{};
+                auto remaining=static_cast<uint32_t>(microseconds);
+                for(std::size_t index=digits.size();index-->0; ){
+                    digits[index]=static_cast<char>('0'+remaining%10);
+                    remaining/=10;
+                }
+                output.append(digits.data(),digits.size());
+            }
+        private:
+            static constexpr std::size_t MICROSECONDS_WIDTH=6;
+    };
+    class FileNameFormatItem final:public Formatter::FormatItem{
+        public:
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
+                output.append(record.m_fileName);
+            }
+    };
+    class LineFormatItem final: public Formatter::FormatItem{
+        public:
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
+                AppendInteger(output,record.m_location.line());
+            }
+    };
+    class TabFormatItem final: public Formatter::FormatItem{
+        public:
+            void format(const LogRecordView& ,ForMattedRecordBuffer& output) const  override{
+                output.append('\t');
+            }
+    };
+    class FiberIdFormatItem final: public Formatter::FormatItem{
+        public:
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
+                AppendInteger(output,record.m_fiberId);
+            }
+    };
+    class ThreadNameFormatItem final: public Formatter::FormatItem{
+        public:
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const  override{
+                output.append(record.m_threadName);
+            }
+    };
+    using FormatItemFactory=std::unique_ptr<Formatter::FormatItem> (*)(std::string_view);
+
+    template<typename Item>
+    [[nodiscard]] std::unique_ptr<Formatter::FormatItem> CreateSimpleFormatItem(std::string_view) {
+        return std::make_unique<Item>();
+    }
+    template<typename Item>
+    [[nodiscard]] std::unique_ptr<Formatter::FormatItem> CreateConfiguredFormatItem(std::string_view format){
+        return std::make_unique<Item>(format);
+    };
+
+    //占位字符map
+    [[nodiscard]] const std::unordered_map<char,FormatItemFactory>& GetFormatItemFactories(){
+        static const std::unordered_map<char,FormatItemFactory> FORMAT_ITEM_FACTORIES{
+            {'m', &CreateSimpleFormatItem<MessageFormatItem>},          // 日志内容
+            {'p', &CreateSimpleFormatItem<LevelFormatItem>},            // LogLevel
+            {'r', &CreateSimpleFormatItem<ElapsedFormatItem>},          // 起服已过时间
+            {'c', &CreateSimpleFormatItem<LoggerNameFormatItem>},       // 日志器名称
+            {'t', &CreateSimpleFormatItem<ThreadIdFormatItem>},         // 线程id
+            {'n', &CreateSimpleFormatItem<NewLineFormatItem>},          // 换行
+            {'d', &CreateConfiguredFormatItem<DateTimeFormatItem>},     // datetime
+            {'u', &CreateSimpleFormatItem<MicrosecondsFormatItem>},     // 毫秒数
+            {'f', &CreateSimpleFormatItem<FileNameFormatItem>},         // 文件名
+            {'l', &CreateSimpleFormatItem<LineFormatItem>},             // 行号
+            {'T', &CreateSimpleFormatItem<TabFormatItem>},              // 制表符
+            {'F', &CreateSimpleFormatItem<FiberIdFormatItem>},          // 协程ID
+            {'N', &CreateSimpleFormatItem<ThreadNameFormatItem>},       // 大N线程名
+        };
+        return FORMAT_ITEM_FACTORIES;
+    };
+
+    [[nodiscard]] std::unique_ptr<Formatter::FormatItem> CreateFormatItem(char directive,std::string_view format){
+        const auto& factories=GetFormatItemFactories();
+        const auto it=factories.find(directive);
+        ASSERT_RETVAL2(it!=factories.end(),nullptr,"unknown logger format directive");
+        return it->second(format);
+    };
+
+    void Formatter::addLiteral(std::string& literal){
+        if(literal.empty()) return;
+        m_items.push_back(std::make_unique<LiteralFormatItem>(std::move(literal)));
+        literal.clear();
+    }
+
+    int Formatter::parse(){
+        std::string literal;
+        for(std::size_t index=0;index<m_pattern.size();++index){
+            if(m_pattern[index]!='%'){
+                literal.push_back(m_pattern[index]);
+                continue;
+            }
+            ASSERT_RETVAL2(index+1<m_pattern.size(),-1,"logger format pattern ends with an incomplete directive");
+            //取'%'下一个字符
+            const char directive=m_pattern[++index];
+            if(directive=='%'){
+                literal.push_back('%');
+                continue;
+            }
+            addLiteral(literal);
+            std::string_view item_format;
+            if(index+1<m_pattern.size()&&m_pattern[index+1]=='{'){
+                const std::size_t closing_brace=m_pattern.find('}',index+2);
+                ASSERT_RETVAL2(closing_brace!=std::string::npos&& closing_brace != (index+2),-2,"missing a closing brace or empty");
+                item_format=std::string_view(m_pattern).substr(index+2,closing_brace-index-2);
+                index=closing_brace;
+            };
+            m_items.push_back(CreateFormatItem(directive,item_format));
+        }
+        addLiteral(literal);
+        //检查
+        for(const auto& item:m_items){
+            ASSERT_RETVAL2(item!=nullptr,-3,"logger format contains anull format item");
+        }
+        return 0;
+    }
+
+
+}// namespcae pans::detail

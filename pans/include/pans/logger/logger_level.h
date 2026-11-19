@@ -7,7 +7,7 @@
 
 
 namespace pans {
-class PANS_API LoggerLevel final {
+class PANS_API LogLevel final {
 public:
     enum class Level : uint8_t {
         LOG_LV_DEBUG=1,

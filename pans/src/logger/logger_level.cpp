@@ -6,7 +6,7 @@
 
 namespace pans {
 
-    std::string_view LoggerLevel::LevelToString(Level level) noexcept {
+    std::string_view LogLevel::LevelToString(Level level) noexcept {
         // switch (level) {
         //     case Level::LOG_LV_DEBUG: return "DEBUG";
         //     case Level::LOG_LV_INFO: return "INFO";
@@ -29,7 +29,7 @@ namespace pans {
         };
         return "UNKNOWN";
     };
-    LoggerLevel::Level LoggerLevel::StringToLevel(std::string_view levelStr) noexcept {
+    LogLevel::Level LogLevel::StringToLevel(std::string_view levelStr) noexcept {
         std::array<char,6> normalizedStr{};
         // 将输入字符串转换为大写形式
         std::transform(levelStr.begin(), levelStr.end(), normalizedStr.begin(), [](char c) { return std::toupper(static_cast<unsigned char>(c)); });

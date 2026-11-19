@@ -16,14 +16,14 @@ namespace pans::detail{
             class FormatItem{
                 public:
                     virtual ~FormatItem()=default;
-                    virtual void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept=0;
+                    virtual void format(const LogRecordView& record,ForMattedRecordBuffer& output) const=0;
             };
             explicit Formatter(std::string_view pattern);
-            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const noexcept;
+            void format(const LogRecordView& record,ForMattedRecordBuffer& output) const ;
             [[nodiscard]] const std::string& getPattern() const noexcept {return m_pattern;}
         private:
-            int parse() noexcept;
-            void addLiteral(std::string& literal) noexcept;
+            int parse() ;
+            void addLiteral(std::string& literal) ;
         private:
             std::string m_pattern="";
             std::vector<std::unique_ptr<FormatItem>> m_items;

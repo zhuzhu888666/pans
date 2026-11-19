@@ -10,7 +10,7 @@
 namespace pans::detail{
     struct LogRecordView
     {
-        LoggerLevel::Level m_level=LoggerLevel::Level::LOG_LV_DEBUG;
+        LogLevel::Level m_level=LogLevel::Level::LOG_LV_DEBUG;
         std::string_view m_loggerName="";//日志器名字
         std::string_view m_message="";//日志内容
         std::chrono::system_clock::time_point m_timestamp;//时间戳

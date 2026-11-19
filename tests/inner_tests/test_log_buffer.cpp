@@ -1,5 +1,6 @@
 #include<array>
 #include<atomic>
+#include<charconv>
 #include<chrono>
 #include<cstddef>
 #include<cstdint>
@@ -10,9 +11,10 @@
 #include<sstream>
 #include<string>
 #include<string_view>
+#include<system_error>
 
-#include"buffer.h"
-#include"buffer_config.h"
+#include"logger/buffer.h"
+#include"logger/buffer_config.h"
 
 
 constexpr int RUNS=7;
@@ -62,5 +64,36 @@ double Run(F& f){
         total_nanoseconds+=static_cast<long double>(f().count());
     }
     return static_cast<double>(total_nanoseconds/RUNS);
+}
+
+int main(int argc, char** argv){
+    if(argc > 2){
+        std::cerr << "Usage: " << argv[0] << " [iterations]\n";
+        return 1;
+    }
+
+    g_target = 10'000;
+    if(argc == 2){
+        const std::string_view arg{argv[1]};
+        const auto result = std::from_chars(arg.data(), arg.data() + arg.size(), g_target);
+        if(result.ec != std::errc{} || result.ptr != arg.data() + arg.size() || g_target == 0){
+            std::cerr << "iterations must be a positive integer\n";
+            return 1;
+        }
+    }
+
+    constexpr std::string_view message{"log buffer benchmark"};
+    auto inlineWrite = [&](){ return WriteWithBuffer(message); };
+    auto streamWrite = [&](){ return WriteWithStringStream(message); };
+    auto inlineBenchmark = [&](){ return BenchmarkWrites(inlineWrite); };
+    auto streamBenchmark = [&](){ return BenchmarkWrites(streamWrite); };
+
+    std::cout << std::fixed << std::setprecision(2)
+              << "writes: " << g_target << ", average of " << RUNS << " runs\n"
+              << std::left << std::setw(18) << "InlineBuffer"
+              << Run(inlineBenchmark) / static_cast<double>(g_target) << " ns/write\n"
+              << std::setw(18) << "stringstream"
+              << Run(streamBenchmark) / static_cast<double>(g_target) << " ns/write\n";
+    return 0;
 }
 
